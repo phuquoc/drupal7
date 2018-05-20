@@ -1,0 +1,221 @@
+<?php
+/*
+ * Implementation of hook_menu
+ */
+ 
+function users_birthday_menu() {
+  $items = array();
+  $items['users/birthday'] = array(
+    'title' => 'User\'s Birthday',
+    'page callback' => array('users_birthday_list'),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+
+
+/*
+ * function to return upcoming dob data for birthday page & block
+ */
+function users_birthday_list() {
+  $birthday_page_content = users_dob_data();
+  return $birthday_page_content;
+}
+
+
+function users_dob_data($block_content = NULL) {
+  $curdate = mktime(0,0,0,date('m'),date('d'),date('Y'));
+  $interval_one_week = strtotime('+1 week',$curdate)+86399;
+  $query = db_select('field_data_field_dob','dob');
+  $query->leftjoin('users','u','u.uid = dob.entity_id');
+  $query->addExpression('UNIX_TIMESTAMP(DATE_ADD(field_dob_value,INTERVAL IF(DAYOFYEAR(field_dob_value) >= DAYOFYEAR(CURDATE()-1),YEAR(CURDATE())-YEAR(field_dob_value),YEAR(CURDATE())-YEAR(field_dob_value)+1) YEAR))', 'next_birthday');
+  $query->fields('dob',array('field_dob_value'));
+  $query->fields('u',array('uid'));
+  $query->isNotNull('dob.field_dob_value');
+  $query->havingCondition('next_birthday', array($curdate,$interval_one_week), 'BETWEEN');
+  $result = $query->execute()->fetchAll();
+  $celebration_dob_data = array();
+  if(count($result)) {
+    foreach($result as $key => $dob_data) {
+      if(date('Y-m-d',$dob_data->next_birthday) == date('Y-m-d')) {
+        $celebration_dob_data['today'][$dob_data->uid] = $dob_data;
+      } else {
+        $celebration_dob_data['future'][$dob_data->uid] = $dob_data;
+      }
+    }
+  }
+  $today_birthday_html = '';
+  if(isset($celebration_dob_data['today'])) {
+    if(count($celebration_dob_data['today'])) {
+      $today_birthday_html = '<div class = "future-birthdays-list">Today</div>';
+      $split_today_celebration_data = array_chunk($celebration_dob_data['today'], 2);
+      foreach($split_today_celebration_data as $key_index => $value) {
+        $today_birthday_output_list = array();
+        foreach($value as $data) {
+          $user_details = user_load($data->uid);
+          $first_name = '';
+          if(isset($user_details->field_first_name['und'])) {
+            if($user_details->field_first_name['und'][0]['value'])
+              $first_name = l($user_details->field_first_name['und'][0]['value'],'user/'.$data->uid);
+          }
+          $users_picture_details = $user_details->picture;
+          if(isset($users_picture_details->uri) && $users_picture_details->uri) {
+            $users_profile_image = $users_picture_details->uri;
+          } else {
+            $users_profile_image = variable_get('user_picture_default', '');
+          }
+          $user_image_array = array(
+            'style_name' => variable_get('user_picture_style', '70px-square'),
+            'path' => $users_profile_image,
+          );
+          $today_birthday_output_list[] = $first_name;
+          $today_birthday_output_list[] = theme('image_style',$user_image_array);
+        }
+        $today_birthday_html .= theme('item_list',array('items' => $today_birthday_output_list, 'type' => 'ul'));
+      }
+    }
+  }
+  $future_birthday_html = '';
+  if(isset($celebration_dob_data['future'])) {
+    if(count($celebration_dob_data['future'])) {
+      $future_birthday_html = '<div class = "future-birthdays-list">Future</div>';
+      $split_future_celebration_data = array_chunk($celebration_dob_data['future'], 2);
+      foreach($split_future_celebration_data as $key_index => $value) {
+        $future_birthday_output_list = array();
+        foreach($value as $data) {
+          $user_details = user_load($data->uid);
+          $users_picture_details = $user_details->picture;
+          if(isset($users_picture_details->uri) && $users_picture_details->uri) {
+            $users_profile_image = $users_picture_details->uri;
+          } else {
+            $users_profile_image = variable_get('user_picture_default', '');
+          }
+          $user_image_array = array(
+            'style_name' => variable_get('user_picture_style', '70px-square'),
+            'path' => $users_profile_image,
+          );
+          $first_name = '';
+          if(date('Y-m-d',$data->next_birthday) == date('Y-m-d')) {
+            $celebration_date = 'Today';
+          } else {
+            $celebration_date = date('d M',$data->next_birthday);
+          }
+          if(count($user_details->field_first_name)) {
+            if($user_details->field_first_name['und'][0]['value'])
+              $first_name = l($user_details->field_first_name['und'][0]['value'],'user/'.$data->uid);
+          }
+          $future_birthday_output_list[] = $first_name;
+          $future_birthday_output_list[] = theme('image_style',$user_image_array);
+          $future_birthday_output_list[] = $celebration_date;
+        }
+        $future_birthday_html .= theme('item_list',array('items' => $future_birthday_output_list, 'type' => 'ul'));
+      }
+    }
+  }
+  if(isset($block_content)) {
+    return $celebration_dob_data;
+  } else {
+    return $today_birthday_html.$future_birthday_html;
+  }
+}
+
+
+
+/**
+ * Implements hook_block_info()
+ */
+function users_birthday_block_info() {
+  $block = array();
+  $block['users_dob_list'] = array(
+    'info' => t('User\'s DOB List'),
+    'cache' => DRUPAL_NO_CACHE,
+  );
+  return $block;
+}
+
+
+
+/**
+ * Implements hook_block_view().
+ */
+function users_birthday_block_view($delta = '') {
+  $block = array();
+  switch ($delta) {
+    case 'users_dob_list':
+      $users_dob_array = users_dob_data('block');
+      $birthday_content = '';
+      if(count($users_dob_array)) {
+        $no_of_birthdays_count = 0;
+        // no of birthdays to show in block
+        $no_of_birthdays_to_show = 2;
+        // seperate today and future data from data
+        if(isset($users_dob_array['today'])) {
+          if(count($users_dob_array['today'])) {
+            $no_of_birthdays_count = count($users_dob_array['today']);
+            if(count($users_dob_array['today']) > $no_of_birthdays_to_show) {
+              shuffle($users_dob_array['today']);
+              $result = array_slice($users_dob_array['today'],0,$no_of_birthdays_to_show);
+            } else if(count($users_dob_array['today']) == $no_of_birthdays_to_show) {
+              shuffle($users_dob_array['today']);
+              $result = $users_dob_array['today'];
+            } else if (count($users_dob_array['today']) < $no_of_birthdays_to_show) {
+              $fill_pending_users_data = $no_of_birthdays_to_show - count($users_dob_array['today']);
+              shuffle($users_dob_array['today']);
+              if(isset($users_dob_array['future']) && count($users_dob_array['future'])) {
+                $result = $users_dob_array['today'];
+                shuffle($users_dob_array['future']);
+                $fill = array_slice($users_dob_array['future'],0,$fill_pending_users_data);
+                $result = array_merge($result, $fill);
+                $no_of_birthdays_count += count($users_dob_array['future']);
+              } else {
+                $result = $users_dob_array['today'];
+              }
+            }
+          }
+        } else if (count($users_dob_array['future']) > 0) {
+          shuffle($users_dob_array['future']);
+          $result = array_slice($users_dob_array['future'],0,$no_of_birthdays_to_show);
+          $no_of_birthdays_count = count($users_dob_array['future']);
+        }
+        if(count($result)) {
+          foreach($result as $key => $value) {
+            $dob_block_content = array();
+            $user_details = user_load($value->uid);
+            $users_picture_details = $user_details->picture;
+            if(isset($users_picture_details->uri) && $users_picture_details->uri) {
+              $users_profile_image = $users_picture_details->uri;
+            } else {
+              $users_profile_image = variable_get('user_picture_default', '');
+            }
+            $user_image_array = array(
+              'style_name' => variable_get('user_picture_style', '70px-square'),
+              'path' => $users_profile_image,
+            );
+            $first_name = '';
+            if(isset($user_details->field_first_name['und'])) {
+              if($user_details->field_first_name['und'][0]['value'])
+                $first_name = l($user_details->field_first_name['und'][0]['value'], 'user/'.$value->uid);
+            }
+            if(date('Y-m-d',$value->next_birthday) == date('Y-m-d')) {
+              $celebration_date = 'Today';
+            } else {
+              $celebration_date = date('d M',$value->next_birthday);
+            }
+            $dob_block_content[] = $first_name;
+            $dob_block_content[] = theme('image_style', $user_image_array);
+            $dob_block_content[] = $celebration_date;
+            $birthday_content .= theme('item_list', array('items' => $dob_block_content, 'type' => 'ul'));
+          }
+          if($no_of_birthdays_count > $no_of_birthdays_to_show) {
+            $birthday_content .= '<div class = "all-bd-link">'.l('View All', 'users/birthday/page').'</div>';
+          }
+        }
+      }
+      $block['subject'] = t('Upcoming Birthdays');
+      $block['content'] = $birthday_content;
+    break;
+  }
+  return $block;
+}

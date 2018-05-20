@@ -1,0 +1,17 @@
+name = Users Birthday
+description = Show a list of users having birthday in block & seperate page.
+dependencies[] = drupal:date
+package = custom
+core = 7.x
+
+
+
+
+
+datestamp = "1507969899"
+
+; Information added by Drupal.org packaging script on 2018-04-30
+version = "7.x-1.0-alpha2"
+core = "7.x"
+project = "users_birthday"
+datestamp = "1525095787"
