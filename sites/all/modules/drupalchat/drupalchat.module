@@ -1123,7 +1123,7 @@ function drupalchat_get_messages() {
 	//$output .= '<pre>' . print_r($user_item,true) . '</pre>';
     //$output .= theme('user_picture', array('account' =>$user_item));
   }
-  return filter_xss($ouput, array('a', 'div'));
+  return filter_xss($output, array('a', 'div'));
   }
 }
 
@@ -1214,7 +1214,7 @@ function drupalchat_get_messages_specific($id = "1") {
     }
     $output .= '';
   }
-  return filter_xss($ouput, array('a', 'div'));
+  return filter_xss($output, array('a', 'div'));
   }
 }
 
